@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LocalRAG — مكتبتك، على جهازك</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2314110f'/%3E%3Ctext x='32' y='45' font-size='42' text-anchor='middle' fill='%23d99a45'%3E%E2%97%88%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/ui/css/app.css">
+</head>
+<body>
+  <header class="rail">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">◈</span>
+      <div class="brand-copy">
+        <span class="brand-name">LOCALRAG</span>
+        <span class="brand-tag" data-i18n="brandTag">مكتبتك، على جهازك — بلا اتصال</span>
+      </div>
+    </div>
+    <div class="rail-actions">
+      <span id="ollamaPill" class="pill pill-off" title="Ollama">● <span data-i18n="checking">جارٍ الفحص</span></span>
+      <button id="langBtn" class="ghost" type="button" title="العربية / English">EN</button>
+      <button id="themeBtn" class="ghost" type="button" title="Theme">☾</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="left-column" aria-label="Library">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button">
+        <span class="drop-glyph" aria-hidden="true">▤</span>
+        <strong data-i18n="dropTitle">أفلت الكتب هنا</strong>
+        <span class="drop-hint" data-i18n="dropHint">ملفات PDF — تُقرأ محليًا، صفحة بصفحة</span>
+        <div class="drop-controls">
+          <button id="chooseBtn" class="solid" type="button" data-i18n="choose">اختر ملفات PDF</button>
+          <label class="engine-field">
+            <span data-i18n="ocrEngine">محرك التعريف</span>
+            <select id="engineSelect"></select>
+          </label>
+        </div>
+        <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
+      </div>
+
+      <div class="section-head">
+        <h2 data-i18n="library">المكتبة</h2>
+        <div class="section-actions">
+          <span id="bookCount" class="count">0</span>
+          <button id="removeAllBtn" class="ghost small danger" type="button" data-i18n="removeAll">حذف الكل</button>
+        </div>
+      </div>
+      <div id="bookList" class="book-list"></div>
+    </section>
+
+    <section class="right-column" aria-label="Detail">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-folio" aria-hidden="true">صفحة<br>أولى</div>
+        <p data-i18n="emptyLine1">اختر كتابًا لمتابعة التعرف على حروفه.</p>
+        <p class="muted" data-i18n="emptyLine2">تُحفظ كل صفحة فورًا؛ لا تخشَ إغلاق التطبيق.</p>
+      </div>
+
+      <div id="detail" hidden>
+        <div class="detail-head">
+          <div>
+            <span class="eyebrow" data-i18n="activeFolio">الملف النشط</span>
+            <h1 id="bookTitle">—</h1>
+            <p id="bookMeta" class="muted"></p>
+          </div>
+          <div id="statusChip" class="chip">—</div>
+        </div>
+
+        <div class="progress-card">
+          <div class="progress-number"><span id="progressPct">0</span><small>%</small></div>
+          <div class="progress-main">
+            <div class="ink-bar"><i id="progressFill"></i></div>
+            <div class="progress-legend">
+              <span id="progressText">—</span>
+              <span id="progressEta" class="muted"></span>
+            </div>
+            <div class="stat-row">
+              <span><b id="statDone">0</b> <span data-i18n="done">مكتملة</span></span>
+              <span><b id="statFlagged">0</b> <span data-i18n="flagged">تحتاج مراجعة</span></span>
+              <span><b id="statFailed">0</b> <span data-i18n="failed">فاشلة</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="pauseBtn" class="ghost" type="button" data-i18n="pause">إيقاف مؤقت</button>
+          <button id="resumeBtn" class="ghost" type="button" data-i18n="resume">متابعة</button>
+          <button id="cancelBtn" class="ghost danger" type="button" data-i18n="cancel">إلغاء</button>
+          <button id="retryBtn" class="solid small" type="button" data-i18n="retry">إعادة الصفحات المتعثرة</button>
+          <button id="deleteBookBtn" class="ghost danger" type="button" data-i18n="deleteBook">حذف المصدر</button>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="pages" type="button" data-i18n="pages">الصفحات</button>
+          <button class="tab" data-tab="chat" type="button" data-i18n="chat">المحادثة</button>
+          <button class="tab" data-tab="search" type="button" data-i18n="search">بحث</button>
+          <button class="tab" data-tab="benchmark" type="button" data-i18n="benchmark">مقارنة المحركات</button>
+          <button class="tab" data-tab="memory" type="button" data-i18n="memory">الذاكرة</button>
+          <button class="tab" data-tab="settings" type="button" data-i18n="settings">الإعدادات</button>
+          <button class="tab" data-tab="events" type="button" data-i18n="events">السجل</button>
+        </div>
+
+        <div id="tab-pages" class="tab-panel">
+          <div class="split">
+            <div class="page-list-wrap">
+              <div class="section-head small"><h3 data-i18n="pageList">قائمة الصفحات</h3></div>
+              <div id="pageList" class="page-list"></div>
+            </div>
+            <div class="preview-wrap">
+              <div class="section-head small">
+                <h3 id="previewTitle" data-i18n="preview">معاينة الصفحة</h3>
+                <span id="previewConfidence" class="chip subtle">—</span>
+              </div>
+              <div class="preview-grid">
+                <div id="previewImageBox" class="preview-image"><span class="muted" data-i18n="noPreview">لا توجد صورة بعد</span></div>
+                <div id="previewText" class="preview-text" dir="auto"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-chat" class="tab-panel" hidden>
+          <div class="chat-bar">
+            <select id="conversationSelect" aria-label="conversation"></select>
+            <button id="newConversationBtn" class="ghost small" type="button" data-i18n="newConversation">محادثة جديدة</button>
+            <select id="chatScope" aria-label="chat scope">
+              <option value="current" data-i18n="searchScopeCurrent">هذا الكتاب</option>
+              <option value="all" data-i18n="searchScopeAll">كل الكتب</option>
+            </select>
+            <select id="chatMode" aria-label="mode">
+              <option value="chat" data-i18n="modeChat">سؤال وجواب</option>
+              <option value="summarize" data-i18n="modeSummarize">تلخيص نطاق</option>
+              <option value="compare" data-i18n="modeCompare">مقارنة الكتب</option>
+            </select>
+            <label class="tiny-field"><span data-i18n="pageRange">صفحة</span><input id="chatPageFrom" type="number" min="1" placeholder="—"></label>
+            <label class="tiny-field"><span>—</span><input id="chatPageTo" type="number" min="1" placeholder="—"></label>
+          </div>
+          <div class="chat-compose">
+            <input id="chatQuery" dir="auto" data-i18n-placeholder="chatPlaceholder" placeholder="اسأل عن الكتب المفهرسة…">
+            <button id="chatSendBtn" class="solid" type="button" data-i18n="send">أرسل</button>
+          </div>
+          <div class="memory-confirm">
+            <input id="memoryDraft" dir="auto" data-i18n-placeholder="memoryDraftPlaceholder" placeholder="حقيقة تؤكد حفظها لهذه المحادثة (اختياري)">
+            <select id="memoryDraftKind" aria-label="memory kind">
+              <option value="fact" data-i18n="fact">حقيقة</option>
+              <option value="preference" data-i18n="preference">تفضيل</option>
+            </select>
+          </div>
+          <div class="chat-layout">
+            <div id="chatLog" class="chat-log"><p class="muted" data-i18n="noChat">ابدأ محادثة؛ كل إجابة ستكون مستندة إلى صفحات الكتب.</p></div>
+            <aside id="citationPanel" class="citation-panel" hidden>
+              <div class="citation-head">
+                <h3 id="citationTitle">—</h3>
+                <button id="citationClose" class="ghost small" type="button" aria-label="close">×</button>
+              </div>
+              <div id="citationImage" class="preview-image"></div>
+              <div id="citationText" class="preview-text" dir="auto"></div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="tab-search" class="tab-panel" hidden>
+          <div class="search-bar">
+            <input id="searchQuery" type="search" dir="auto" data-i18n-placeholder="searchPlaceholder" placeholder="ابحث في الكتب المفهرسة…">
+            <select id="searchScope" aria-label="scope">
+              <option value="current" data-i18n="searchScopeCurrent">هذا الكتاب</option>
+              <option value="all" data-i18n="searchScopeAll">كل الكتب</option>
+            </select>
+            <label class="tiny-field"><span data-i18n="pageRange">صفحة</span><input id="searchPageFrom" type="number" min="1" placeholder="—"></label>
+            <label class="tiny-field"><span>—</span><input id="searchPageTo" type="number" min="1" placeholder="—"></label>
+            <label class="tiny-field"><span data-i18n="topK">النتائج</span><input id="searchTopK" type="number" min="1" max="50" value="8"></label>
+            <button id="searchBtn" class="solid" type="button" data-i18n="runSearch">ابحث</button>
+          </div>
+          <div id="searchResult" class="search-result"></div>
+        </div>
+
+        <div id="tab-benchmark" class="tab-panel" hidden>
+          <div class="benchmark-setup">
+            <div>
+              <strong data-i18n="benchIntro">اختر حتى ١٠ صفحات، وشغّل محركات التعريف عليها.</strong>
+              <p class="muted" data-i18n="benchHelp">تُعرض النتائج جنبًا إلى جنب مع الزمن لكل صفحة. يُفرَّغ المحرك من الذاكرة بين كل محرك وآخر.</p>
+            </div>
+            <button id="benchBtn" class="solid" type="button" data-i18n="runBenchmark">شغّل المقارنة</button>
+          </div>
+          <div id="benchPages" class="bench-pages"></div>
+          <div id="benchResult" class="bench-result"></div>
+        </div>
+
+        <div id="tab-memory" class="tab-panel" hidden>
+          <div class="memory-form">
+            <input id="memoryContent" dir="auto" data-i18n-placeholder="memoryPlaceholder" placeholder="حقيقة أو تفضيل مؤكد من المستخدم…">
+            <select id="memoryKind" aria-label="memory kind">
+              <option value="fact" data-i18n="fact">حقيقة</option>
+              <option value="preference" data-i18n="preference">تفضيل</option>
+            </select>
+            <button id="memoryAddBtn" class="solid" type="button" data-i18n="addMemory">أضف للذاكرة</button>
+          </div>
+          <p class="muted memory-note" data-i18n="memoryNote">تُحفظ الحقائق المؤكدة فقط؛ لا يكتب المحرك ذاكرة تلقائيًا.</p>
+          <div id="memoryList" class="memory-list"></div>
+        </div>
+
+        <div id="tab-settings" class="tab-panel" hidden>
+          <div class="settings-grid">
+            <label><span data-i18n="llmModel">نموذج اللغة</span><select id="modelSelect"></select></label>
+            <label><span data-i18n="temperature">الحرارة</span><input id="settingTemperature" type="number" min="0" max="1.5" step="0.1"></label>
+            <label><span data-i18n="contextTokens">حد السياق</span><input id="settingContext" type="number" min="1024" max="65536" step="1024"></label>
+            <label><span data-i18n="historyTurns">الذاكرة القريبة</span><input id="settingHistory" type="number" min="0" max="30"></label>
+            <button id="saveSettingsBtn" class="solid" type="button" data-i18n="saveSettings">حفظ الإعدادات</button>
+          </div>
+          <p id="settingsInfo" class="muted"></p>
+        </div>
+
+        <div id="tab-events" class="tab-panel" hidden>
+          <div id="eventList" class="event-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/ui/js/app.js"></script>
+</body>
+</html>

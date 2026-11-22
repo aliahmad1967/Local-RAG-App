@@ -1,0 +1,150 @@
+# LocalRAG default configuration.
+# User changes are written to config.local.yaml (merged over this file).
+# All paths are relative to the project root unless absolute.
+
+paths:
+  data_dir: "data"
+  db_path: "data/localrag.db"
+  books_dir: "data/books"
+  logs_dir: "data/logs"
+  uploads_dir: "data/books/_uploads"
+
+ollama:
+  host: "http://127.0.0.1:11434"
+  request_timeout_s: 900
+  models:
+    embedding: "bge-m3"
+    llm: "qwen3.5:latest"
+    llm_alt: "gemma4:latest"
+    llm_fast: "llama3.2:latest"
+
+ocr:
+  # paddleocr-vl was the fastest and most faithful on scanned Arabic samples.
+  default_engine: "paddleocr-vl"
+  engines:
+    glm-ocr:
+      model: "glm-ocr:latest"
+      prompt: "OCR"
+      keep_alive: "5m"
+      # Its 131k default context spills an 11 GB model onto CPU; bound it.
+      options:
+        num_ctx: 8192
+        num_predict: 2048
+        repeat_penalty: 1.05
+    deepseek-ocr:
+      model: "deepseek-ocr:latest"
+      prompt: "OCR"
+      keep_alive: "5m"
+      options:
+        num_ctx: 4096
+        num_predict: 2048
+        repeat_penalty: 1.05
+    paddleocr-vl:
+      model: "seriouswebby/paddleocr-vl-1.6:latest"
+      prompt: "OCR"
+      keep_alive: "5m"
+      options:
+        num_ctx: 4096
+        num_predict: 2048
+        repeat_penalty: 1.05
+  tesseract:
+    cmd: "C:/Program Files/Tesseract-OCR/tesseract.exe"
+    lang: "ara+eng"
+    psm: 6
+  heuristic_confidence_threshold: 45.0
+
+ingestion:
+  dpi: 250
+  min_embedded_chars: 80
+  image_format: "PNG"
+  retry_limit: 2
+  low_confidence_threshold: 45.0
+  unload_ocr_after_job: true
+  unload_between_benchmark_engines: true
+  poll_interval_s: 0.4
+  workers: 1
+
+text:
+  keep_paragraph_breaks: true
+  bm25_strip_tashkeel: true
+  bm25_normalize_alef: true
+  bm25_normalize_ya_marbuta: true
+
+indexing:
+  # Child chunks are the search units; parent windows are returned to the LLM.
+  target_tokens: 500
+  min_tokens: 400
+  max_tokens: 600
+  overlap_ratio: 0.15
+  parent_multiplier: 3
+  # Pages whose OCR yields fewer tokens than this are title/blank-page noise.
+  min_chunk_tokens: 10
+  embed_batch_size: 16
+  # null = let Ollama decide; 0 = force CPU (use when OCR still holds the GPU).
+  embed_num_gpu: null
+  unload_embedding_after_index: true
+  # Vector backend: 'numpy' stores float32 BLOBs in SQLite and uses NumPy cosine
+  # similarity. sqlite-vec has no Python 3.14 wheel, so numpy is the default.
+  vector_backend: "numpy"
+  bm25_top_k: 50
+  dense_top_k: 50
+
+retrieval:
+  dense_top_k: 50
+  bm25_top_k: 50
+  rrf_k: 60
+  rrf_weights: [1.0, 1.0]   # [dense, BM25]
+  fused_top_k: 40
+  final_top_k: 8
+  # Optional LLM query rewrite. Off by default: it would load another model
+  # while OCR/embeddings may still own the GPU.
+  query_rewrite: false
+  query_rewrite_model: null   # null => ollama.models.llm_fast
+  reranker:
+    enabled: true
+    backend: "cross-encoder"      # 'cross-encoder' | 'ollama' | 'none'
+    model: "BAAI/bge-reranker-v2-m3"
+    # torch here is a CPU build on the target machine; 'cuda' only works with
+    # a CUDA-enabled torch install and enough free VRAM.
+    device: "cpu"
+    fp16: false
+    batch_size: 16
+    max_length: 512
+    # Once the model is cached, loading is strictly offline.
+    local_files_only: true
+    # CUDA users should set true; CPU keeps the model loaded for the session.
+    unload_after_search: false
+
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+desktop:
+  # 0 = choose a free loopback port at startup (recommended).
+  port: 0
+  window_width: 1440
+  window_height: 900
+  # Optional. Requires `pystray`; ignored if the dependency is unavailable.
+  system_tray: false
+
+generation:
+  # null => ollama.models.llm (qwen3.5:latest). Settings can override any of these.
+  model: null
+  # Avoid consuming the answer token budget with hidden reasoning on thinking models.
+  think: false
+  temperature: 0.2
+  num_predict: 1024
+  context_tokens: 8192
+  # Warn when the assembled prompt gets close to the configured model context.
+  context_warning_tokens: 6500
+  history_turns: 6
+  summary_every_messages: 8
+  memory_top_k: 5
+  citations: true
+  # On this 8 GB machine CPU retrieval/reranking is the default. Generation
+  # uses Ollama's GPU unless LOCALRAG_LLM_CPU=1 while OCR holds the GPU.
+  unload_llm_after_answer: false
+
+ui:
+  language: "ar"
+  theme: "dark"

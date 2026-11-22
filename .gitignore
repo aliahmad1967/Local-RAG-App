@@ -1,0 +1,22 @@
+# Local machine state and generated artifacts
+/data/
+tests/data/*.pdf
+.playwright-cli/
+*.db
+*.db-wal
+*.db-shm
+config.local.yaml
+*.log
+.localrag-desktop.lock
+desktop.url
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# PyInstaller
+build/
+dist/
+*.manifest
