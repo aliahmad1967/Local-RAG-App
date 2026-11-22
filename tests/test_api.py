@@ -29,6 +29,29 @@ def test_health_books_and_static_ui(cfg, monkeypatch):
         assert config.json()["ocr"]["default_engine"] == "paddleocr-vl"
 
 
+def test_source_overview_for_digital_pdf(cfg, monkeypatch):
+    monkeypatch.setattr(app_module, "load_config", lambda: cfg)
+
+    with TestClient(app_module.create_app()) as client:
+        db = client.app.state.db
+        now = "2026-11-21T00:00:00Z"
+        from pathlib import Path
+        source = Path(__file__).parent / "data" / "sample_en_scanned_20.pdf"
+        with db.transaction() as conn:
+            conn.execute(
+                """INSERT INTO books
+                   (id, title, file_path, file_name, page_count, language, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("overview-book", "Sample English", str(source), source.name, 20, "en", "ingested", now, now),
+            )
+        response = client.get("/api/books/overview-book/overview")
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] in ("ready", "fallback", "ocr_pending")
+        assert isinstance(data["summary"], str)
+        assert len(data["questions"]) >= 3
+
+
 def test_delete_books_api(cfg, monkeypatch):
     monkeypatch.setattr(app_module, "load_config", lambda: cfg)
     with TestClient(app_module.create_app()) as client:

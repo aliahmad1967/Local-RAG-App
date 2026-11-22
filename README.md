@@ -259,6 +259,111 @@ data/books/<book-id>/pages/       cached page rasters
 data/logs/localrag.log            UTF-8 logs
 ```
 
+## User guide
+
+### Windows quick start
+
+1. Start Ollama and keep it running:
+
+   ```bat
+   ollama serve
+   ```
+
+2. From the project folder, start the desktop app:
+
+   ```bat
+   run.bat
+   ```
+
+   To open the browser interface instead, run:
+
+   ```bat
+   python -m localrag serve
+   ```
+
+   Then open `http://127.0.0.1:8765/`.
+
+### Import and OCR a PDF
+
+1. In the **Library** panel, choose an OCR engine. PaddleOCR VL is the default.
+2. Drag a PDF onto the drop zone, or use **Choose PDF files**.
+3. The book is added to the library immediately and OCR begins in the background.
+4. The card shows the page count, completed pages and current job status. Use
+   **Pause**, **Resume**, **Cancel** or **Retry** as needed.
+5. Large jobs may take several hours. LocalRAG checkpoints every page in SQLite,
+   so restarting the app or killing a process does not require OCR from page one.
+
+### Inspect pages
+
+1. Select a book in the library.
+2. Open the **Pages** section.
+3. Choose a page number to compare the rasterized page image with its original
+   and cleaned OCR text.
+4. Failed or low-confidence pages appear with review status. Retry only those
+   pages after changing the OCR engine.
+
+### Build the search index
+
+After OCR finishes, open the **Index** section and start indexing. LocalRAG:
+
+- creates small search chunks and larger parent passages;
+- builds the Arabic-aware BM25 index;
+- embeds text with `bge-m3`;
+- resumes incomplete indexing without duplicating cached work.
+
+Indexing is required before retrieval or chat.
+
+### Search
+
+Open **Search**, enter a question or phrase, and optionally choose one book or
+a page range. The debug panel shows dense rank, BM25 rank, RRF rank and reranker
+score for every returned passage.
+
+### Chat with the books
+
+1. Open **Chat** and create or select a saved conversation.
+2. Choose all books or scope the conversation to selected books.
+3. Ask in Arabic or English. The answer is written in the question language.
+4. Every grounded claim includes a clickable citation such as
+   `[Book Title, p.12]`.
+5. Clicking a citation opens the cited page image and OCR text beside the chat.
+
+If the sources do not contain the answer, LocalRAG says that it does not know
+instead of inventing an answer.
+
+### Memory
+
+Open **Memory** to add, edit or delete user-confirmed facts and preferences.
+The assistant does not add memory entries automatically; it only retrieves
+facts that you confirmed.
+
+### Settings
+
+Open **Settings** to change:
+
+- the chat and OCR models;
+- temperature and answer length;
+- context budget and history length;
+- reranking device;
+- Arabic/English UI and dark/light theme.
+
+Changes are saved to `config.local.yaml`. Defaults remain in `config.yaml`.
+
+### Troubleshooting
+
+- **Ollama is down:** run `ollama serve`, then reopen LocalRAG.
+- **A model is missing:** run `ollama pull <model-name>` from the exact command
+  shown by the startup guidance page.
+- **OCR is unavailable:** keep PaddleOCR VL, GLM OCR or DeepSeek OCR pulled in
+  Ollama. Tesseract is an optional fallback and must be installed separately.
+- **The PDF is not visible after upload:** confirm the Upload toast appeared,
+  open [the log](data/logs/localrag.log), and verify that the job is in
+  `queued`, `running` or `done` state.
+- **The app cannot keep up:** pause OCR, let it unload, and avoid loading two
+  large models at once. The 8 GB GPU configuration prefers CPU reranking.
+- **No answers are returned:** finish OCR and indexing, verify that the selected
+  books contain text, and confirm that `bge-m3` is installed.
+
 ## Packaging (Windows)
 
 ```bat

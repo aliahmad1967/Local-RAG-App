@@ -100,9 +100,10 @@ class LocalServer:
     def stop(self, timeout: float = 10.0) -> None:
         if self._server is not None:
             self._server.should_exit = True
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=timeout)
-            if self._thread.is_alive():  # pragma: no cover - rare hung request
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=timeout)
+            if thread.is_alive():  # pragma: no cover - rare hung request
                 log.warning("Uvicorn thread did not exit within %.1fs", timeout)
         self._thread = None
         self._server = None

@@ -44,6 +44,8 @@
       llmModel: "نموذج اللغة", temperature: "الحرارة", contextTokens: "حد السياق",
       historyTurns: "الذاكرة القريبة", saveSettings: "حفظ الإعدادات", settingsSaved: "تم حفظ الإعدادات",
       noModels: "لا توجد نماذج مثبتة", closeCitation: "إغلاق",
+      sourceOverview: "ملخص المصدر", analyzingSource: "جارٍ تحليل النص المضمّن…",
+      overviewReady: "جاهز", overviewPending: "بانتظار OCR", overviewFallback: "ملخص مبدئي",
     },
     en: {
       brandTag: "Your library, on your machine — offline",
@@ -86,6 +88,8 @@
       llmModel: "LLM model", temperature: "Temperature", contextTokens: "Context budget",
       historyTurns: "Recent turns", saveSettings: "Save settings", settingsSaved: "Settings saved",
       noModels: "No installed models", closeCitation: "Close",
+      sourceOverview: "Source overview", analyzingSource: "Analyzing embedded text…",
+      overviewReady: "Ready", overviewPending: "Awaiting OCR", overviewFallback: "Basic overview",
     },
   };
 
@@ -97,6 +101,7 @@
     benchmark: null, searchResult: null, activeTab: "pages", tick: 0, busy: false, engines: [],
     conversations: [], conversationId: null, chatMessages: [], chatBusy: false,
     lastSources: {}, memories: [], models: { installed: [], current: "" }, settings: {},
+    overview: null,
   };
 
   const t = (key, vars = {}) => {
@@ -911,11 +916,67 @@
     S.benchSelection = new Set();
     S.benchmark = null;
     S.searchResult = null;
+    S.overview = null;
+    loadOverview();
     if ($("searchResult")) renderSearchResults();
     renderBooks();
     $("previewText").textContent = "";
     $("previewImageBox").innerHTML = "";
     Promise.all([refreshDetail(), loadPages(), loadBenchmark()]).catch((e) => toast(e.message, "error"));
+  }
+
+  function renderOverview() {
+    const card = $("sourceOverview");
+    if (!card) return;
+    if (!S.overview) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    $("overviewSummary").textContent = S.overview.summary || "";
+    $("overviewSummary").dir = S.overview.language === "ar" ? "rtl" : "ltr";
+    $("overviewStatus").textContent = S.overview.status === "ocr_pending"
+      ? t("overviewPending")
+      : S.overview.status === "fallback" ? t("overviewFallback") : t("overviewReady");
+    const holder = $("overviewQuestions");
+    holder.innerHTML = "";
+    (S.overview.questions || []).forEach((question) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "overview-question";
+      button.textContent = question;
+      button.dir = S.overview.language === "ar" ? "rtl" : "ltr";
+      button.addEventListener("click", () => {
+        S.activeTab = "chat";
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.toggle("active", tab.dataset.tab === "chat");
+        });
+        document.querySelectorAll(".tab-panel").forEach((panel) => {
+          panel.hidden = panel.id !== "tab-chat";
+        });
+        $("chatQuery").value = question;
+        $("chatQuery").focus();
+      });
+      holder.appendChild(button);
+    });
+  }
+
+  async function loadOverview() {
+    if (!S.bookId) return;
+    const card = $("sourceOverview");
+    if (card) {
+      card.hidden = false;
+      $("overviewSummary").textContent = t("analyzingSource");
+      $("overviewStatus").textContent = "…";
+      $("overviewQuestions").innerHTML = "";
+    }
+    try {
+      S.overview = await api(`/api/books/${encodeURIComponent(S.bookId)}/overview`);
+      renderOverview();
+    } catch (error) {
+      if (card) card.hidden = true;
+      toast(error.message, "error");
+    }
   }
 
   async function uploadFiles(files) {
@@ -924,11 +985,14 @@
       body.append("file", file);
       body.append("engine", $("engineSelect").value);
       try {
-        await api("/api/books/import", { method: "POST", body });
+        const result = await api("/api/books/import", { method: "POST", body });
+        S.bookId = result.book.id;
         toast(t("imported", { name: file.name }), "ok");
       } catch (error) { toast(error.message, "error"); }
     }
     await refreshBooks();
+    if (S.bookId) await selectBook(S.bookId);
+    $("fileInput").value = "";
   }
 
   function wire() {
@@ -1063,6 +1127,13 @@
       if (id) {
         await refreshDetail();
         if (++S.tick % 3 === 0) await loadPages();
+        if (
+          S.detail?.progress?.job_status === "done"
+          && S.overview?.status === "ocr_pending"
+          && S.tick % 5 === 0
+        ) {
+          await loadOverview();
+        }
       }
     } catch (error) { /* transient network hiccup; next tick retries */ }
     finally { S.busy = false; }

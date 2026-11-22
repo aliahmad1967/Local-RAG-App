@@ -9,10 +9,12 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 
 from ..db.repositories import BenchmarkRepo, BooksRepo, JobsRepo, PagesRepo
-from ..ingest.pdf import open_document, page_image_for, safe_filename
+from ..ingest.pdf import extract_embedded_text, open_document, page_image_for, safe_filename
 from ..ocr.benchmark import run_benchmark
 from ..ocr.registry import ENGINE_NAMES, available_engines, get_engine
 from ..ocr.vram import ollama_status
+from ..llm.ollama import OllamaChat
+from ..text.language import detect_language
 from .schemas import BenchmarkRequest, EngineChoice, RetryRequest, UISettings
 
 router = APIRouter(prefix="/api")
@@ -101,6 +103,119 @@ def get_book(book_id: str, request: Request) -> dict[str, Any]:
         "book": book.to_dict(),
         "progress": (service.progress(book_id) or BookProgressStub(book.page_count)).to_dict(),
         "jobs": [job.to_dict() for job in jobs[:5]],
+    }
+
+
+@router.get("/books/{book_id}/overview")
+def get_book_overview(book_id: str, request: Request) -> dict[str, Any]:
+    cfg, db, _ = _services(request)
+    book = BooksRepo.get(db, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    parts: list[str] = []
+    embedded_pages = 0
+    try:
+        with open_document(Path(book.file_path)) as doc:
+            for index in range(min(doc.page_count, 20)):
+                text = extract_embedded_text(doc[index])
+                if len(text.strip()) >= 20:
+                    embedded_pages += 1
+                    parts.append(text)
+                if sum(len(part) for part in parts) >= 12000:
+                    break
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read PDF: {exc}") from exc
+
+    sample = "\n\n".join(parts).strip()[:12000]
+    language = book.language if book.language in ("ar", "en") else (
+        detect_language(sample) if sample else "unknown"
+    )
+    if not sample:
+        return {
+            "status": "ocr_pending",
+            "language": language,
+            "summary": (
+                "تم استيراد الكتاب. لأن الصفحات مصوّرة أو لا تحتوي نصًا مضمّنًا، "
+                "سيظهر الملخص بعد اكتمال OCR."
+                if language == "ar"
+                else "The PDF was imported. Because its pages are scanned or contain no embedded text, "
+                     "its summary will be available after OCR completes."
+            ),
+            "questions": (
+                [
+                    "ما الموضوع الرئيسي لهذا الكتاب؟",
+                    "ما أبرز الأفكار أو الفصول؟",
+                    "لخص محتوى الصفحات الأولى.",
+                    "ما المصطلحات المهمة التي يعرضها?",
+                    "ما الاستنتاجات الأساسية؟",
+                ] if language == "ar" else [
+                    "What is the main topic of this book?",
+                    "What are the main ideas or chapters?",
+                    "Summarize the opening pages.",
+                    "What are the key terms or concepts?",
+                    "What conclusions does the book present?",
+                ]
+            ),
+            "embedded_pages": 0,
+        }
+
+    client = OllamaChat(
+        cfg,
+        model=str(cfg.get("generation", "model", default=None) or cfg.get("ollama", "models", "llm_fast", default="llama3.2:latest")),
+        num_predict=500,
+        temperature=0.1,
+        keep_alive="5m",
+    )
+    response_language = "Arabic" if language == "ar" else "English"
+    prompt = (
+        f"Read the following PDF text and return a useful first-reading overview.\n"
+        f"Write the response entirely in {response_language}.\n"
+        "Use this exact format:\nSUMMARY:\n2-4 sentences summarizing the source and likely subject.\n"
+        "QUESTIONS:\n- five specific questions a reader could ask this book\n\n"
+        f"Text:\n{sample}"
+    )
+    try:
+        answer = client.complete(
+            prompt,
+            system="You summarize documents faithfully. Never invent facts not supported by the supplied text.",
+        )
+    except Exception as exc:
+        return {
+            "status": "fallback",
+            "language": language,
+            "summary": str(exc),
+            "questions": (
+                ["ما الموضوع الرئيسي؟", "ما الأفكار الرئيسية؟", "لخص الصفحات الأولى."]
+                if language == "ar"
+                else ["What is the main topic?", "What are the key ideas?", "Summarize the opening pages."]
+            ),
+            "embedded_pages": embedded_pages,
+        }
+    finally:
+        client.unload()
+
+    summary = ""
+    questions: list[str] = []
+    if "QUESTIONS:" in answer:
+        summary, question_block = answer.split("QUESTIONS:", 1)
+        summary = summary.replace("SUMMARY:", "", 1).strip()
+        questions = [
+            line.lstrip("-*0123456789. ").strip()
+            for line in question_block.splitlines()
+            if line.strip()
+        ]
+    elif "SUMMARY:" in answer:
+        summary = answer.replace("SUMMARY:", "", 1).strip()
+    else:
+        summary = answer.strip()
+
+    return {
+        "status": "ready",
+        "language": language,
+        "summary": summary,
+        "questions": questions[:5],
+        "embedded_pages": embedded_pages,
     }
 
 

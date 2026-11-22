@@ -38,6 +38,7 @@ class IngestService:
             self.stop_event = threading.Event()
             self.worker = IngestWorker(self.db, self.cfg, self.queue, self.stop_event)
             self.worker.start()
+        self.queue.wake()
         if recovered:
             log.warning("Recovered %d orphaned job(s) after restart", len(recovered))
         return recovered

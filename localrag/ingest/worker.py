@@ -74,9 +74,7 @@ class IngestWorker(threading.Thread):
             or self.cfg.get("ocr", "default_engine", default="glm-ocr")
         )
         retry_statuses = tuple(params.get("retry_statuses", []))
-        engine = get_engine(engine_name, self.cfg)
-        if not engine.available():
-            raise RuntimeError(f"OCR engine '{engine_name}' is not available on this machine")
+        engine: OCREngine | None = None
 
         dpi = int(self.cfg.get("ingestion", "dpi", default=250))
         min_chars = int(self.cfg.get("ingestion", "min_embedded_chars", default=80))
@@ -86,7 +84,7 @@ class IngestWorker(threading.Thread):
         books_root = self.cfg.path("paths", "books_dir", default="data/books")
 
         JobsRepo.update(self.db, job.id, status="running", total_pages=book.page_count, error=None)
-        JobsRepo.add_event(self.db, job.id, f"Processing with {engine.describe()}")
+        JobsRepo.add_event(self.db, job.id, f"Processing embedded text with OCR fallback: {engine_name}")
         BooksRepo.update(self.db, book.id, status="processing", ocr_engine=engine_name)
 
         with open_document(Path(book.file_path)) as doc:
@@ -106,6 +104,14 @@ class IngestWorker(threading.Thread):
                 elif existing is not None and existing.status in ("done", "flagged") and existing.source != "pending":
                     # Durable checkpoint: never reprocess a completed page.
                     continue
+
+                if engine is None:
+                    first_page = doc[page_no - 1]
+                    embedded = extract_embedded_text(first_page)
+                    if not has_usable_text(embedded, min_chars):
+                        engine = get_engine(engine_name, self.cfg)
+                        if not engine.available():
+                            raise RuntimeError(f"OCR engine '{engine_name}' is not available on this machine")
 
                 status = self.process_page(
                     doc=doc, book=book, engine=engine, page_no=page_no,
@@ -154,7 +160,7 @@ class IngestWorker(threading.Thread):
         self,
         doc: fitz.Document,
         book: Book,
-        engine: OCREngine,
+        engine: OCREngine | None,
         page_no: int,
         dpi: int,
         min_chars: int,
@@ -178,6 +184,10 @@ class IngestWorker(threading.Thread):
             raster_path = page_image_for(fitz_page, books_root, book.id, page_no, dpi=dpi)
             raster = str(raster_path)
             source = "ocr"
+            if engine is None:
+                engine = get_engine(book.ocr_engine, self.cfg)
+                if not engine.available():
+                    raise RuntimeError(f"OCR engine '{engine.name}' is not available on this machine")
             engine_used = engine.name
             raw = ""
             confidence = None

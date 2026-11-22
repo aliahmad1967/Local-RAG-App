@@ -80,6 +80,13 @@ class PagesRepo:
             f"{col} = excluded.{col}" for col in PagesRepo._COLUMNS if col not in ("id", "book_id", "page_no")
         )
         with db.transaction() as conn:
+            # A book may be deleted while OCR is still finishing a page.
+            # Skip the checkpoint atomically instead of surfacing FOREIGN KEY.
+            exists = conn.execute(
+                "SELECT 1 FROM books WHERE id = ?", (page.book_id,)
+            ).fetchone()
+            if exists is None:
+                return page
             conn.execute(
                 f"INSERT INTO pages ({', '.join(PagesRepo._COLUMNS)}) VALUES ({placeholders}) "
                 f"ON CONFLICT (book_id, page_no) DO UPDATE SET {updates}",
